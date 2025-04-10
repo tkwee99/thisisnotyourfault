@@ -4,6 +4,7 @@ let bgGraphics;
 let customFont;
 const FIXED_PADDING = 25; // 固定40pt的padding
 const MAX_SMALL_SIZE = 40; // 小文字最大40pt
+let canvas; // [新增] 全局canvas引用
 
 /*========== 预加载 ==========*/
 function preload() {
@@ -12,17 +13,19 @@ function preload() {
 
 /*========== p5.js 生命周期函数 ==========*/
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  canvas = createCanvas(windowWidth, windowHeight);
   textFont(customFont);
   createBackground();
   resetCanvas();
+  setupTouchEvents();
 }
 
+/*========== 绘图循环 ==========*/
 function draw() {
   background('#E4E4E4');
   if (bgGraphics) image(bgGraphics, 0, 0);
   
-  if (mouseIsPressed && currentShape) {
+  if ((mouseIsPressed || touches.length > 0) && currentShape) { // [修改] 增加触摸判断
     currentShape.displayPreview();
   }
   
@@ -87,6 +90,45 @@ function createBackground() {
 
 
 /*========== 其余代码保持不变 ==========*/
+// [新增] 移动端事件设置函数
+function setupTouchEvents() {
+  // 检测触摸设备
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  
+  if (isTouchDevice) {
+    // 获取canvas DOM元素
+    const canvasElem = document.querySelector('canvas');
+    
+    // 触摸开始
+    canvasElem.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const pos = {
+        x: touch.clientX - canvasElem.offsetLeft,
+        y: touch.clientY - canvasElem.offsetTop
+      };
+      mousePressed();
+      currentShape.addPoint(pos.x, pos.y);
+    }, { passive: false });
+    
+    // 触摸移动
+    canvasElem.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const pos = {
+        x: touch.clientX - canvasElem.offsetLeft,
+        y: touch.clientY - canvasElem.offsetTop
+      };
+      currentShape?.addPoint(pos.x, pos.y);
+    }, { passive: false });
+    
+    // 触摸结束
+    canvasElem.addEventListener('touchend', () => {
+      mouseReleased();
+    });
+  }
+}
+
 function mousePressed() {
   resetCanvas();
   currentShape = new Shape();
@@ -110,7 +152,24 @@ class Shape {
   }
 
   addPoint(x, y) {
-    if (!this.finalized) this.points.push(createVector(x, y));
+    if (!this.finalized) {
+      // [新增] 触摸设备点平滑
+      if (touches.length > 0 && this.points.length > 0) {
+        const last = this.points[this.points.length-1];
+        const dist = Math.sqrt((x-last.x)**2 + (y-last.y)**2);
+        if (dist > 20) {
+          const steps = Math.ceil(dist / 10);
+          for (let i = 1; i < steps; i++) {
+            const t = i / steps;
+            this.points.push(createVector(
+              lerp(last.x, x, t),
+              lerp(last.y, y, t)
+            ));
+          }
+        }
+      }
+      this.points.push(createVector(x, y));
+    }
   }
 
   displayPreview() {
